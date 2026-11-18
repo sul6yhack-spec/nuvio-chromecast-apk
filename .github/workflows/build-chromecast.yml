@@ -1,0 +1,155 @@
+name: Build Chromecast APK
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: chromecast-apk
+  cancel-in-progress: false
+
+jobs:
+  import-source:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      sha: ${{ steps.source.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Import Nuvio 1.0.0 and apply the Android Cast changes
+        id: source
+        run: |
+          set -euo pipefail
+          if [[ ! -f composeApp/build.gradle.kts ]]; then
+            upstream=https://github.com/NuvioMedia/NuvioMobile.git
+            release=511ebd5f175dd39e31b9cc0e7b259259e887cf6f
+            cast_base=3e156936ec246a6ae3ffb7bf6b015dd191d3cf04
+            cast_head=d8e204f3ba0b95634390c15a6cf36d695c68bd5a
+            workflow=.github/workflows/build-chromecast.yml
+            git fetch --no-tags --depth=1 "$upstream" \
+              refs/tags/1.0.0 refs/pull/2523/head "$cast_base" "$cast_head"
+            git read-tree --reset -u "$release"
+            git restore --source=HEAD --staged --worktree -- "$workflow"
+            while IFS= read -r file; do
+              if [[ "$file" != "$workflow" ]]; then
+                git rm --force --quiet -- "$file"
+              fi
+            done < <(git ls-files .github/workflows/)
+            git diff --binary "$cast_base" "$cast_head" -- composeApp/ | git apply --3way --index
+            git apply --index <<'PATCH'
+          diff --git a/androidApp/build.gradle.kts b/androidApp/build.gradle.kts
+          index ae97ecca..c6930444 100644
+          --- a/androidApp/build.gradle.kts
+          +++ b/androidApp/build.gradle.kts
+          @@ -46,6 +46,9 @@ val releaseAppVersionCode = readXcconfigValue(appVersionConfigFile, "CURRENT_PRO
+               ?.toIntOrNull()
+               ?: error("CURRENT_PROJECT_VERSION is missing or invalid in ${appVersionConfigFile.path}")
+           val requestedTaskNames = gradle.startParameter.taskNames.map { it.substringAfterLast(':') }
+          +val arm64Only = providers.gradleProperty("nuvio.android.arm64Only")
+          +    .map(String::toBooleanStrict)
+          +    .getOrElse(false)
+           val buildsReleaseApks = requestedTaskNames.any {
+               it.startsWith("assemble", ignoreCase = true) && it.endsWith("Release", ignoreCase = true)
+           }
+          @@ -116,8 +119,12 @@ android {
+               splits {
+                   abi {
+          -            isEnable = buildsReleaseApks
+          +            isEnable = buildsReleaseApks || arm64Only
+                       reset()
+          -            include("armeabi-v7a", "arm64-v8a", "x86", "x86_64")
+          +            if (arm64Only) {
+          +                include("arm64-v8a")
+          +            } else {
+          +                include("armeabi-v7a", "arm64-v8a", "x86", "x86_64")
+          +            }
+                       isUniversalApk = false
+                   }
+               }
+          PATCH
+            git diff --cached --check "$release" -- composeApp/ androidApp/build.gradle.kts
+            git -c user.name='github-actions[bot]' \
+                -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
+                commit -m 'Import NuvioMobile 1.0.0 and Android Google Cast' \
+                -m 'Upstream NuvioMedia/NuvioMobile 511ebd5f. Cast implementation by vijay3695 in NuvioMedia/NuvioMobile#2523.'
+            git push origin HEAD:refs/heads/main
+          fi
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: import-source
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+          ref: ${{ needs.import-source.outputs.sha }}
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v6
+      - name: Build arm64-v8a APK
+        run: |
+          ./gradlew :androidApp:assembleFullDebug \
+            -Pnuvio.android.distribution=full \
+            -Pnuvio.ios.distribution=appstore \
+            -Pnuvio.android.arm64Only=true --stacktrace
+      - name: Verify APK signature and arm64-v8a libraries
+        run: |
+          set -euo pipefail
+          output_dir=androidApp/build/outputs/apk/full/debug
+          mapfile -t apks < <(find "$output_dir" -maxdepth 1 -type f -name '*arm64-v8a*.apk')
+          test "${#apks[@]}" -eq 1
+          apk="${apks[0]}"
+          abis="$(unzip -Z1 "$apk" | awk -F/ '$1 == "lib" && $3 ~ /\.so$/ {print $2}' | sort -u)"
+          test "$abis" = arm64-v8a
+          apksigner="$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | sort -V | tail -1)"
+          "$apksigner" verify --print-certs "$apk"
+          mkdir dist
+          cp "$apk" dist/nuvio-chromecast-arm64-v8a.apk
+          cd dist
+          sha256sum nuvio-chromecast-arm64-v8a.apk | tee nuvio-chromecast-arm64-v8a.apk.sha256
+      - uses: actions/upload-artifact@v7
+        with:
+          name: nuvio-chromecast-arm64-v8a
+          path: dist/
+          if-no-files-found: error
+          retention-days: 14
+
+  publish:
+    needs: [import-source, build]
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: nuvio-chromecast-arm64-v8a
+          path: dist
+      - name: Publish verified APK as a GitHub release asset
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_SHA: ${{ needs.import-source.outputs.sha }}
+        run: |
+          set -euo pipefail
+          cd dist
+          sha256sum -c nuvio-chromecast-arm64-v8a.apk.sha256
+          tag="1.0.0-chromecast.${GITHUB_RUN_NUMBER}"
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$tag" ./*.apk ./*.sha256 --clobber --repo "$GITHUB_REPOSITORY"
+          else
+            gh release create "$tag" ./*.apk ./*.sha256 \
+              --repo "$GITHUB_REPOSITORY" --target "$SOURCE_SHA" \
+              --title 'Nuvio 1.0.0 with Google Cast (arm64-v8a)' \
+              --notes 'Unofficial, debug-signed Android build based on NuvioMobile 1.0.0 and PR #2523. Google Cast supports direct HTTP(S) video sources without custom request headers.'
+          fi
