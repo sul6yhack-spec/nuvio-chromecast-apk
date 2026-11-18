@@ -23,6 +23,8 @@ jobs:
           distribution: temurin
           java-version: '17'
       - uses: gradle/actions/setup-gradle@v6
+      - name: Prepare runtime properties
+        run: touch local.properties
       - name: Build arm64-v8a APK
         run: |
           ./gradlew :androidApp:assembleFullDebug \
