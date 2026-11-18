@@ -441,6 +441,7 @@ kotlin {
             dependencies {
                 implementation(libs.compose.uiToolingPreview)
                 implementation("com.google.android.gms:play-services-cast-framework:23.0.0")
+                implementation("org.nanohttpd:nanohttpd:2.3.1")
                 implementation(libs.androidx.appcompat)
                 implementation(libs.androidx.activity.compose)
                 implementation(libs.androidx.core.splashscreen)

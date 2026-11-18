@@ -369,18 +369,21 @@ private fun PlayerScreenRuntime.RenderPlayerControls(
     val partyState by PartyRepository.state.collectAsStateWithLifecycle()
     val partyActive = partyState.party != null
     val playerBadges = rememberPlayerBadges()
-    val directHttpCastSource = activeSourceUrl.startsWith("http://", true) ||
-        activeSourceUrl.startsWith("https://", true)
+    val castFromTorrent = activeTorrentInfoHash != null
+    val castUrl = if (castFromTorrent) p2pResolvedSourceUrl.orEmpty() else activeSourceUrl
+    val directHttpCastSource = castUrl.startsWith("http://", true) || castUrl.startsWith("https://", true)
     val canCastCurrentSource = directHttpCastSource &&
-        activeTorrentInfoHash == null &&
         activeSourceAudioUrl == null &&
         activeSourceHeaders.isEmpty() &&
         !ServerStreams.isServerSourceId(activeProviderAddonId)
     PlatformCastSessionEffect(
-        url = activeSourceUrl,
+        url = castUrl,
         title = title,
         positionMs = playbackSnapshot.positionMs,
-        headers = activeSourceHeaders,
+        torrentFileName = activeTorrentFilename ?: activeStreamFilename,
+        relayLocalVideo = castFromTorrent,
+        subtitle = selectedAddonSubtitle,
+        subtitleDelayMs = subtitleDelayMs,
         canCast = canCastCurrentSource,
         wasPlaying = shouldPlay,
         onPauseLocal = {
@@ -393,7 +396,7 @@ private fun PlayerScreenRuntime.RenderPlayerControls(
             if (resumePlayback) playerController?.play() else playerController?.pause()
         },
         onUnsupported = {
-            NuvioToastController.show("This source cannot be played with Google Cast.")
+            NuvioToastController.show("Cannot start Google Cast for this source. For torrents, try an MP4 source on the same Wi-Fi.")
         },
     )
     LaunchedEffect(folded) {
