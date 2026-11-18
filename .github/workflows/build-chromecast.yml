@@ -23,8 +23,39 @@ jobs:
           distribution: temurin
           java-version: '17'
       - uses: gradle/actions/setup-gradle@v6
-      - name: Prepare runtime properties
-        run: touch local.properties
+      - name: Configure the official Nuvio account server
+        run: |
+          python3 - <<'PY'
+          import base64
+          import json
+          import re
+          from pathlib import Path
+          from urllib.request import Request, urlopen
+
+          backend = 'https://api.nuvio.tv'
+          with urlopen(f'{backend}/.well-known/nuvio', timeout=30) as response:
+              config = json.load(response)
+          if config['service'] != 'nuvio' or config['backend_url'].rstrip('/') != backend:
+              raise SystemExit('Unexpected Nuvio discovery configuration')
+          key = config['publishable_key']
+          publishable = re.fullmatch(r'sb_publishable_[A-Za-z0-9_-]+', key)
+          if not publishable:
+              if not re.fullmatch(r'[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+', key):
+                  raise SystemExit('Invalid public Nuvio client key format')
+              payload = key.split('.')[1]
+              claims = json.loads(base64.urlsafe_b64decode(payload + '=' * (-len(payload) % 4)))
+              if claims.get('role') != 'anon':
+                  raise SystemExit('Only an anonymous client key may be included in the APK')
+          request = Request(f'{backend}/auth/v1/settings', headers={'apikey': key})
+          with urlopen(request, timeout=30) as response:
+              if not json.load(response)['external']['email']:
+                  raise SystemExit('Nuvio email authentication is unavailable')
+          Path('local.properties').write_text(
+              f'NUVIO_SUPABASE_URL={backend}\nNUVIO_SUPABASE_ANON_KEY={key}\n',
+              encoding='utf-8',
+          )
+          print('Verified the official Nuvio email authentication endpoint.')
+          PY
       - name: Build arm64-v8a APK
         run: |
           ./gradlew :androidApp:assembleFullDebug \
@@ -78,5 +109,5 @@ jobs:
             gh release create "$tag" ./*.apk ./*.sha256 \
               --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
               --title 'Nuvio 1.0.0 with Google Cast (arm64-v8a)' \
-              --notes 'Unofficial, debug-signed Android build based on NuvioMobile 1.0.0 and PR #2523. Google Cast supports direct HTTP(S) video sources without custom request headers.'
+              --notes 'Unofficial, debug-signed Android build based on NuvioMobile 1.0.0 and PR #2523. This build configures the official Nuvio account server. Google Cast supports direct HTTP(S) video sources without custom request headers.'
           fi
