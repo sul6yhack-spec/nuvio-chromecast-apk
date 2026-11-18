@@ -164,7 +164,7 @@ android {
 
 androidComponents {
     onVariants(selector().withBuildType("debug")) { variant ->
-        variant.applicationId.set("com.nuviodebug.com")
+        variant.applicationId.set("com.sul6yhack.nuviocast")
     }
     onVariants(selector().withBuildType("benchmark")) { variant ->
         variant.applicationId.set("com.nuviodebug.com")
