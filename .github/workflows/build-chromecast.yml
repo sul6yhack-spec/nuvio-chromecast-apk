@@ -56,6 +56,96 @@ jobs:
           )
           print('Verified the official Nuvio email authentication endpoint.')
           PY
+      - name: Prepare Cast streaming and subtitle changes
+        run: |
+          set -euo pipefail
+          if [[ -f composeApp/src/androidMain/kotlin/com/nuvio/app/features/player/CastLocalMediaRelay.kt ]]; then
+            exit 0
+          fi
+          base64 -d <<'PATCH' | gzip -d > "${RUNNER_TEMP}/cast-source.patch"
+          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
+          PATCH
+          git apply --check "${RUNNER_TEMP}/cast-source.patch"
+          git apply "${RUNNER_TEMP}/cast-source.patch"
       - name: Build arm64-v8a APK
         run: |
           ./gradlew :androidApp:assembleFullDebug \
@@ -74,6 +164,9 @@ jobs:
           apksigner="$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | sort -V | tail -1)"
           "$apksigner" verify --print-certs "$apk"
           mkdir dist
+          if [[ -f "${RUNNER_TEMP}/cast-source.patch" ]]; then
+            cp "${RUNNER_TEMP}/cast-source.patch" dist/
+          fi
           cp "$apk" dist/nuvio-chromecast-arm64-v8a.apk
           cd dist
           sha256sum nuvio-chromecast-arm64-v8a.apk | tee nuvio-chromecast-arm64-v8a.apk.sha256
@@ -91,6 +184,7 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v6
       - uses: actions/download-artifact@v8
         with:
           name: nuvio-chromecast-arm64-v8a
@@ -100,6 +194,15 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
+          if [[ -f dist/cast-source.patch ]]; then
+            git apply --index dist/cast-source.patch
+            git diff --cached --check
+            git -c user.name='github-actions[bot]' \
+                -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
+                commit -m 'Relay compatible torrent media and selected subtitles to Chromecast'
+            git push origin HEAD:refs/heads/main
+          fi
+          source_sha="$(git rev-parse HEAD)"
           cd dist
           sha256sum -c nuvio-chromecast-arm64-v8a.apk.sha256
           tag="1.0.0-chromecast.${GITHUB_RUN_NUMBER}"
@@ -107,7 +210,7 @@ jobs:
             gh release upload "$tag" ./*.apk ./*.sha256 --clobber --repo "$GITHUB_REPOSITORY"
           else
             gh release create "$tag" ./*.apk ./*.sha256 \
-              --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+              --repo "$GITHUB_REPOSITORY" --target "$source_sha" \
               --title 'Nuvio 1.0.0 with Google Cast (arm64-v8a)' \
-              --notes 'Unofficial, debug-signed Android build based on NuvioMobile 1.0.0 and PR #2523. This build configures the official Nuvio account server. Google Cast supports direct HTTP(S) video sources without custom request headers.'
+              --notes 'Unofficial, debug-signed Android build based on NuvioMobile 1.0.0 and PR #2523. This build configures the official Nuvio account server. Includes same-Wi-Fi relay for compatible torrent video and selected external WebVTT subtitles. MKV and unsupported codecs still require screen mirroring. Playback on a physical receiver has not been verified.'
           fi
